@@ -32,7 +32,7 @@ class CSVDailyBarDataSource(object):
         provided directory.
     """
 
-    def __init__(self, csv_dir, asset_type, adjust_prices=True, csv_symbols=None):
+    def __init__(self, csv_dir, asset_type, adjust_prices=False, csv_symbols=None):
         self.csv_dir = csv_dir
         self.asset_type = asset_type
         self.adjust_prices = adjust_prices
