@@ -19,9 +19,9 @@ if __name__ == "__main__":
     # Construct the symbol and asset necessary for the backtest
     strategy_symbols = ['GLD']
     strategy_assets = ['EQ:GLD']
-    strategy_universe = StaticUniverse(strategy_assets)
 
     # To avoid loading all CSV files in the directory, set the
+    strategy_universe = StaticUniverse(strategy_assets)
     # data source to load only those provided symbols
     csv_dir = os.environ.get('QSTRADER_CSV_DATA_DIR', '.')
     data_source = CSVDailyBarDataSource(csv_dir, Equity, csv_symbols=strategy_symbols, adjust_prices=False)

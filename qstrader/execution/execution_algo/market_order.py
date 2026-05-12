@@ -23,4 +23,7 @@ class MarketOrderExecutionAlgorithm(ExecutionAlgorithm):
         `list[Order]`
             The final list of orders to send to the Broker to be executed.
         """
+
+        
+
         return initial_orders
