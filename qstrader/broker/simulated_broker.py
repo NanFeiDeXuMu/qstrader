@@ -8,6 +8,8 @@ from qstrader.broker.fee_model.fee_model import FeeModel
 from qstrader.broker.portfolio.portfolio import Portfolio
 from qstrader.broker.transaction.transaction import Transaction
 from qstrader.broker.fee_model.zero_fee_model import ZeroFeeModel
+from qstrader.broker.market_impact_model import MarketImpactModel
+from qstrader.broker.slippage_model import SlippageModel
 
 
 class SimulatedBroker(Broker):
@@ -52,8 +54,8 @@ class SimulatedBroker(Broker):
         base_currency="USD",
         initial_funds=0.0,
         fee_model=ZeroFeeModel(),
-        slippage_model=None,
-        market_impact_model=None
+        slippage_model=SlippageModel(),
+        market_impact_model=MarketImpactModel()
     ):
         self.start_dt = start_dt
         self.exchange = exchange
@@ -64,8 +66,8 @@ class SimulatedBroker(Broker):
         self.base_currency = self._set_base_currency(base_currency)
         self.initial_funds = self._set_initial_funds(initial_funds)
         self.fee_model = self._set_fee_model(fee_model)
-        self.slippage_model = None  # TODO: Implement
-        self.market_impact_model = None  # TODO: Implement
+        self.slippage_model = slippage_model
+        self.market_impact_model = market_impact_model
 
         self.cash_balances = self._set_cash_balances()
         self.portfolios = self._set_initial_portfolios()
@@ -73,6 +75,7 @@ class SimulatedBroker(Broker):
 
         if settings.PRINT_EVENTS:
             print('Initialising simulated broker "%s"...' % self.account_id)
+
 
     def _set_base_currency(self, base_currency):
         """
@@ -564,22 +567,20 @@ class SimulatedBroker(Broker):
                 order.asset, order.order_id
             )
         )
-        bid_ask = self.data_handler.get_asset_latest_bid_ask_price(
+        current_mid_price = self.data_handler.get_asset_latest_mid_price(
             dt, order.asset
         )
-        if bid_ask == (np.nan, np.nan):
-            raise ValueError(price_err_msg)
+        price = self.slippage_model(
+            order.asset, order.quantity, current_mid_price, self
+        )
+        price_change = self.market_impact_model(order.quantity)
 
-        # Calculate the consideration and total commission
-        # based on the commission model
-        if order.direction > 0:
-            price = bid_ask[1]
-        else:
-            price = bid_ask[0]
         consideration = round(price * order.quantity)
         total_commission = self.fee_model.calc_total_cost(
             order.asset, order.quantity, consideration, self
         )
+
+        self.data_handler.set_last_price(order.asset, price_change)
 
         # Check that sufficient cash exists to carry out the
         # order, else scale it down

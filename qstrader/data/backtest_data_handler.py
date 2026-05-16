@@ -12,6 +12,7 @@ class BacktestDataHandler(object):
     ):
         self.universe = universe
         self.data_sources = data_sources
+        self.cumulative_offsets = {}
 
     def get_asset_latest_bid_price(self, dt, asset_symbol):
         """
@@ -25,6 +26,7 @@ class BacktestDataHandler(object):
                     return bid
             except Exception:
                 bid = np.nan
+        bid += self.cumulative_offsets.get(asset_symbol, 0.0)
         return bid
 
     def get_asset_latest_ask_price(self, dt, asset_symbol):
@@ -39,6 +41,7 @@ class BacktestDataHandler(object):
                     return ask
             except Exception:
                 ask = np.nan
+        ask += self.cumulative_offsets.get(asset_symbol, 0.0)
         return ask
 
     def get_asset_latest_bid_ask_price(self, dt, asset_symbol):
@@ -51,7 +54,10 @@ class BacktestDataHandler(object):
         # It has been added as an optimisation mechanism for
         # interday backtests.
         bid = self.get_asset_latest_bid_price(dt, asset_symbol)
-        return (bid, bid)
+        ask = self.get_asset_latest_ask_price(dt, asset_symbol)
+        bid += self.cumulative_offsets.get(asset_symbol, 0.0)
+        ask += self.cumulative_offsets.get(asset_symbol, 0.0)
+        return (bid, ask)
 
     def get_asset_latest_mid_price(self, dt, asset_symbol):
         """
@@ -62,6 +68,7 @@ class BacktestDataHandler(object):
         except Exception:
             # TODO: Log this
             mid = np.nan
+        mid += self.cumulative_offsets.get(asset_symbol, 0.0)
         return mid
 
     def get_assets_historical_range_close_price(
@@ -80,3 +87,7 @@ class BacktestDataHandler(object):
             except Exception:
                 raise
         return prices_df
+    
+    def set_last_price(self, asset, price, dt=0.0):
+        self.cumulative_offsets[asset] = self.cumulative_offsets.get(asset, 0.0) + price
+        print(f"For {asset}, total offset is {self.cumulative_offsets[asset]}")

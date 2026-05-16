@@ -205,3 +205,48 @@ self.qts = self._create_quant_trading_system(** kwargs)
 
 1. Update mid price
 2. Execute orders.
+
+各类`model`:
+
+`fee_model`包含$commission$和$tax$.
+
+:thinking:. 永久市场冲击的`data_handler`函数. 最抽象的问题:下载`site-package`库,修改源代码但是依然默认去原始库中查找模块,以至于根本不执行修改.
+
+```
+pip install -e .
+```
+
+> 终于能够正常运行了,可喜可贺可喜可贺. 注意下列两个模型的实现
+
+#### slippage
+
+$$
+\hat S_k=S_{k-1}-h(\frac{n_k}{\tau}),\ h(\cdot)=\eta(\frac{n_k}{\tau})^\alpha
+$$
+
+```python
+def __call__(self, quantity, current_price):
+    if quantity == 0:
+        return current_price
+    trading_rate = abs(quantity) / self.tau
+    h_v = self.eta * (trading_rate ** self.alpha)
+    sign = 1 if quantity > 0 else -1
+    return current_price + sign * h_v
+```
+
+#### market impact
+
+$$
+\Delta=\tau\cdot g(\frac{n_k}{\tau}),\ g(\cdot)=\gamma(\frac{n_k}{\tau})^\alpha
+$$
+
+```python
+def __call__(self, quantity):
+    if quantity == 0:
+        return 0.0
+    trading_rate = abs(quantity) / self.tau
+    g_v = self.gamma * trading_rate ** self.alpha
+    sign = 1 if quantity > 0 else -1
+    return sign * self.tau * g_v
+```
+

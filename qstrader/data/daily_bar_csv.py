@@ -276,3 +276,4 @@ class CSVDailyBarDataSource(object):
         prices_df = pd.concat(close_series, axis=1).dropna(how='all')
         prices_df = prices_df.loc[start_dt:end_dt]
         return prices_df
+

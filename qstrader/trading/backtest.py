@@ -384,7 +384,7 @@ class BacktestTradingSession(TradingSession):
         for event in self.sim_engine:
             # Output the system event and timestamp
             dt = event.ts
-            if settings.PRINT_EVENTS:
+            if not settings.PRINT_EVENTS:
                 print("(%s) - %s" % (event.ts, event.event_type))
 
             # Update the simulated broker

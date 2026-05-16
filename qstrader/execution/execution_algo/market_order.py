@@ -15,15 +15,13 @@ class MarketOrderExecutionAlgorithm(ExecutionAlgorithm):
         ----------
         dt : `pd.Timestamp`
             The current time used to populate the Order instances.
-        rebalance_orders : `list[Order]`
-            The list of rebalance orders to execute.
+        initial_orders : `list[Order]`
+            The list of initial orders to execute.
 
         Returns
         -------
         `list[Order]`
             The final list of orders to send to the Broker to be executed.
         """
-
-        
 
         return initial_orders
