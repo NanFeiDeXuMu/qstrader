@@ -88,6 +88,6 @@ class BacktestDataHandler(object):
                 raise
         return prices_df
     
-    def set_last_price(self, asset, price, dt=0.0):
-        self.cumulative_offsets[asset] = self.cumulative_offsets.get(asset, 0.0) + price
+    def set_last_price(self, asset, price_change, dt=0.0):
+        self.cumulative_offsets[asset] = self.cumulative_offsets.get(asset, 0.0) + price_change
         print(f"For {asset}, total offset is {self.cumulative_offsets[asset]}")

@@ -365,7 +365,7 @@ class BacktestTradingSession(TradingSession):
             alloc_df = alloc_df[self.burn_in_dt.date():]
         return alloc_df
 
-    def run(self, results=False):
+    def run(self, results=False, external_event=None):
         """
         Execute the simulation engine by iterating over all
         simulation events, rebalancing the quant trading
@@ -383,6 +383,8 @@ class BacktestTradingSession(TradingSession):
 
         for event in self.sim_engine:
             # Output the system event and timestamp
+            if external_event:
+                event = external_event
             dt = event.ts
             if not settings.PRINT_EVENTS:
                 print("(%s) - %s" % (event.ts, event.event_type))
@@ -423,6 +425,8 @@ class BacktestTradingSession(TradingSession):
                         self._update_equity_curve(dt)
                 else:
                     self._update_equity_curve(dt)
+            if external_event:
+                return
 
         self.target_allocations = stats['target_allocations']
 

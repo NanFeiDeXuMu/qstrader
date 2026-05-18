@@ -231,7 +231,7 @@ class PortfolioConstructionModel(object):
         assets = self.universe.get_assets(dt)
         return {asset: 0.0 for asset in assets}
 
-    def __call__(self, dt, stats=None):
+    def __call__(self, dt, stats=None, step_weights=None):
         """
         Execute the portfolio construction process at a particular
         provided date-time.
@@ -288,6 +288,8 @@ class PortfolioConstructionModel(object):
             stats['target_allocations'].append(alloc_dict)
 
         # Calculate target portfolio in notional
+        if step_weights:
+            full_weights = step_weights
         target_portfolio = self._generate_target_portfolio(dt, full_weights)
 
         # Obtain current Broker account portfolio

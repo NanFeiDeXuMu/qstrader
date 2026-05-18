@@ -250,3 +250,50 @@ def __call__(self, quantity):
     return sign * self.tau * g_v
 ```
 
+> 流程:
+>
+> 1. 创建`market_impact_model.py`和`slippage_model.py`并分别实现公式逻辑. (参数传进`__init__`,把公式逻辑写在`__call__`)
+> 2. 在`simulated_broker`中更改`price`获取逻辑,并把修正后的价格回传到`data_handler`中.
+> 3. 在`BacktestDataHandler`类中新增一个`cumulative_offsets`字典,用于存储某个`asset`对应的*累计永久市场偏离*.
+> 4. 在`data_handler`的所有query函数中添加`cumulative_offsets.get(asset_symbol, 0.0)`,确保*污染*后续的历史数据.
+
+#### 嵌入RL逻辑 (alpha model)
+
+`portfolio`是`asset`到`quantity`的映射. $\Delta$.
+
+```python
+rebalance_portfolio = {}
+for asset in target_portfolio.keys():
+    target_qty = target_portfolio[asset]["quantity"]
+    current_qty = current_portfolio[asset]["quantity"]
+    order_qty = target_qty - current_qty
+    rebalance_portfolio[asset] = {"quantity": order_qty}
+```
+
+> [!important]
+>
+> 一共拆分为4个逻辑:
+>
+> 1. `PPOModel`预测逻辑, 给定`state`生成交易信号`Signal`.
+> 2. 封装`Env`训练环境.
+> 3. 训练$PPO$模型.
+> 4. 基于交易信号在`simulated_broker`处执行,或构建`target_portfolio`.
+
+环境配置太多太杂,能否直接导入`BacktestTradingSession`作为样本?以及数据集的处理问题 :thinking:.​
+
+最后还是导入了,否则根本无法满足*环境动力学*.要训练模型,本质上要在`env`中复刻一个`QSTrader`来模拟交易.
+
+`reset()`函数用于加载在`backtest`初始化及之前的数据.
+
+`step(action)`用于单步进行,可以先用抽象函数构建框架,再分步实现.
+
+```python
+def step(self, action):
+    self.alpha_model.current_actions = action
+    self._run_one_step()
+    next_state = self._get_observation()
+    reward = self._calculate_reward()
+    done = self._check_done()
+    return next_state, reward, done, {}
+```
+
