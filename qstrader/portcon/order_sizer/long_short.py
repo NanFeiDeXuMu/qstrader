@@ -147,12 +147,12 @@ class LongShortLeveragedOrderSizer(OrderSizer):
                 dt, asset
             )
 
-            if np.isnan(asset_price):
+            if np.isnan(asset_price) or asset_price <= 0.0:
                 raise ValueError(
-                    'Asset price for "%s" at timestamp "%s" is Not-a-Number (NaN). '
+                    'Asset price for "%s" at timestamp "%s" is invalid (%s). '
                     'This can occur if the chosen backtest start date is earlier '
                     'than the first available price for a particular asset. Try '
-                    'modifying the backtest start date and re-running.' % (asset, dt)
+                    'modifying the backtest start date and re-running.' % (asset, dt, asset_price)
                 )
 
             # Truncate the after cost dollar weight

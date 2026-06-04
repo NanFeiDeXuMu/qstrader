@@ -55,8 +55,6 @@ class BacktestDataHandler(object):
         # interday backtests.
         bid = self.get_asset_latest_bid_price(dt, asset_symbol)
         ask = self.get_asset_latest_ask_price(dt, asset_symbol)
-        bid += self.cumulative_offsets.get(asset_symbol, 0.0)
-        ask += self.cumulative_offsets.get(asset_symbol, 0.0)
         return (bid, ask)
 
     def get_asset_latest_mid_price(self, dt, asset_symbol):
@@ -68,7 +66,10 @@ class BacktestDataHandler(object):
         except Exception:
             # TODO: Log this
             mid = np.nan
-        mid += self.cumulative_offsets.get(asset_symbol, 0.0)
+        # Do NOT add cumulative_offsets here: bid/ask getters already return
+        # the raw CSV price when valid data exists (early return, no offset),
+        # so adding offset here would inflate mid prices and create a
+        # runaway feedback loop in position marking (total_equity → inf).
         return mid
 
     def get_assets_historical_range_close_price(

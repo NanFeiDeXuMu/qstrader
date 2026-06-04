@@ -284,7 +284,7 @@ class SimulatedBroker(Broker):
         tmv_dict = {}
         master_tmv = 0.0
         for portfolio in self.portfolios.values():
-            pmv = self.get_portfolio_market_value(
+            pmv = self.get_portfolio_total_market_value(
                 portfolio.portfolio_id
             )
             tmv_dict[portfolio.portfolio_id] = pmv

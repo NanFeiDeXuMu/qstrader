@@ -220,6 +220,8 @@ class CSVDailyBarDataSource(object):
             bid = bid_series.iloc[0]
         except KeyError:  # Before start date
             return np.nan
+        if bid <= 0.0:
+            return np.nan
         return bid
 
     @functools.lru_cache(maxsize=1024 * 1024)
@@ -244,6 +246,8 @@ class CSVDailyBarDataSource(object):
         try:
             ask = ask_series.iloc[0]
         except KeyError:  # Before start date
+            return np.nan
+        if ask <= 0.0:
             return np.nan
         return ask
 

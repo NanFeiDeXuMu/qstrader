@@ -2,7 +2,8 @@ import os
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
-from qstrader.alpha_model.feature_handler import FeatureHandler  # Bug9: absolute import
+import pandas as pd
+from qstrader.alpha_model.feature_handler import FeatureHandler
 from qstrader.trading.backtest import BacktestTradingSession
 from qstrader.asset.universe.static import StaticUniverse
 from qstrader.data.daily_bar_csv import CSVDailyBarDataSource
@@ -52,14 +53,15 @@ class QSTraderExecutionEnv(gym.Env):
         self.state_dim = training_config['state_dim']
         self.symbols = training_config['symbols']
         self.assets = training_config['assets']
-        self.start_dt = training_config['starting_day']
-        self.end_dt = training_config['ending_day']
+        self.start_dt = pd.Timestamp(training_config['starting_day'] + ' 14:30:00', tz='UTC')
+        self.end_dt   = pd.Timestamp(training_config['ending_day']   + ' 23:59:00', tz='UTC')
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
 
         strategy_uni = StaticUniverse(self.assets)
-        csv_dir = os.environ.get('QSTRADER_CSV_DATA_DIR', '.')
+        _default_csv = os.path.join(os.path.dirname(__file__), '..', '..', 'examples')
+        csv_dir = os.environ.get('QSTRADER_CSV_DATA_DIR', _default_csv)
         data_source = CSVDailyBarDataSource(
             csv_dir, Equity, csv_symbols=self.symbols, adjust_prices=False
         )
@@ -82,68 +84,69 @@ class QSTraderExecutionEnv(gym.Env):
             data_handler=data_handler
         )
 
-        self.sim_iter = iter(self.backtest.sim_engine)  # Bug3: iterator, not exhausted list
-        self.current_portfolio_value = self.backtest.broker.get_account_total_market_value()
-        self._pending_dt = None
+        self.feature_handler = FeatureHandler(
+            data_handler=data_handler,
+            assets=self.assets,
+            lookback=20
+        )
+
+        self.sim_iter = iter(self.backtest.sim_engine)
+        self.current_portfolio_value = self.backtest.broker.get_account_total_equity()['master']
 
         obs = self._advance_to_market_open()
         if obs is None:
             obs = np.zeros(self.observation_space.shape, dtype=np.float32)
-        return obs, {}  # Bug5: return (obs, info)
+        return obs, {}
 
     def _advance_to_market_open(self):
-        """Consume events until market_open; process each event along the way.
-        Returns observation vector at that market_open, or None if simulation ended."""
+        """Consume events until next market_open, executing rebalance at
+        each market_close along the way. Returns the observation at
+        market_open, or None if the simulation has ended."""
         for event in self.sim_iter:
-            self.backtest.broker.update(event.ts)
+            dt = event.ts
+            self.backtest.broker.update(dt)
             if event.event_type == 'market_close':
-                self.backtest._update_equity_curve(event.ts)
-            elif event.event_type == 'market_open':  # Bug7: process each event in correct order
-                self._pending_dt = event.ts
-                return self._get_observation(event.ts)
+                if self.backtest._is_rebalance_event(dt):
+                    try:
+                        self.backtest.qts(dt, stats={'target_allocations': []})
+                    except (ValueError, OverflowError):
+                        pass  # invalid price at this bar — keep current positions
+                self.backtest._update_equity_curve(dt)
+            elif event.event_type == 'market_open':
+                return self._get_observation(dt)
         return None
 
     def _get_observation(self, dt):
-        """Return observation of shape (state_dim,)."""  # Bug4: vector, not scalar
-        obs = np.zeros(self.state_dim, dtype=np.float32)
-        for i, asset in enumerate(self.assets[:self.state_dim]):
-            try:
-                price = self.backtest.data_handler.get_asset_latest_mid_price(dt, asset)
-                obs[i] = float(price)
-            except Exception:
-                pass
-        return obs
+        """Return FeatureHandler state vector of shape (state_dim,)."""
+        try:
+            return self.feature_handler(dt)
+        except Exception:
+            return np.zeros(self.state_dim, dtype=np.float32)
 
     def step(self, action):
         self.alpha_model.current_actions = action
 
-        # Execute rebalance at the pending market_open with updated weights
-        stats = {'target_allocations': []}
-        if self.backtest._is_rebalance_event(self._pending_dt):
-            self.backtest.qts(self._pending_dt, stats=stats)
-
-        # Advance through market_close to next market_open
         next_obs = self._advance_to_market_open()
 
-        portfolio_value = self.backtest.broker.get_account_total_market_value()
+        portfolio_value = self.backtest.broker.get_account_total_equity()['master']
         reward = float(portfolio_value - self.current_portfolio_value)
         self.current_portfolio_value = portfolio_value
 
-        terminated = next_obs is None   # Bug8: judge after full event processing
+        terminated = next_obs is None
         truncated = False
         if terminated:
             next_obs = np.zeros(self.observation_space.shape, dtype=np.float32)
 
-        return next_obs, reward, terminated, truncated, {}  # Bug6: 5 return values
+        return next_obs, reward, terminated, truncated, {}
 
 
 if __name__ == "__main__":
-    env = QSTraderExecutionEnv(training_config={   # Bug10: only training_config param
-        'state_dim': 5,
+    env = QSTraderExecutionEnv(training_config={
+        'state_dim': 15,           # 5 assets × 3 features (log_ret, mean_ret, std)
         'action_dim': 5,
         'starting_day': '2020-01-01',
         'ending_day': '2020-12-31',
-        'symbols': ['SPY', 'AGG', 'GLD', 'IEI', 'TLT'],           # Bug10: required keys
+        'symbols': ['SPY', 'AGG', 'GLD', 'IEI', 'TLT'],
         'assets': ['EQ:SPY', 'EQ:AGG', 'EQ:GLD', 'EQ:IEI', 'EQ:TLT']
     })
     obs, info = env.reset()
