@@ -3,8 +3,14 @@ from qstrader.alpha_model.env_setup import QSTraderExecutionEnv
 import os
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
-from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNormalize
 from stable_baselines3.common.monitor import Monitor
+
+
+def _make_env(config):
+    def _init():
+        return Monitor(QSTraderExecutionEnv(config))
+    return _init
 
 
 def main():
@@ -23,7 +29,8 @@ def main():
         'ending_day': '2019-12-31'
     }
 
-    train_env = DummyVecEnv([lambda: Monitor(QSTraderExecutionEnv(training_config))])
+    N_ENVS = 4
+    train_env = SubprocVecEnv([_make_env(training_config) for _ in range(N_ENVS)])
     # VecNormalize: normalise observations (running mean/std) and rewards (running std).
     # Critical for log-return rewards which are small (~1e-3) and for observation
     # features that span different scales across assets and market regimes.
@@ -31,7 +38,7 @@ def main():
 
     # Eval env shares the same obs normalisation statistics as train_env (norm_reward
     # disabled for eval so EvalCallback sees true episode returns for comparison).
-    eval_env = DummyVecEnv([lambda: Monitor(QSTraderExecutionEnv(eval_config))])
+    eval_env = SubprocVecEnv([_make_env(eval_config)])
     eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=False, clip_obs=10.0,
                             training=False)
 
