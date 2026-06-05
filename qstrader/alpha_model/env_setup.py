@@ -99,6 +99,12 @@ class QSTraderExecutionEnv(gym.Env):
             (all_bdays >= first_price_day) & (all_bdays <= latest_start)
         ]
         self._valid_starts = valid_starts
+        if len(self._valid_starts) == 0:
+            raise ValueError(
+                f"No valid episode start dates found between {training_config['starting_day']} "
+                f"and {training_config['ending_day']}. The date range must span at least "
+                f"{BURN_IN_DAYS + EPISODE_LENGTH_DAYS + 1} business days."
+            )
 
     def _sample_episode_window(self, rng):
         """Pick a random start date; end date is episode_length_days later."""

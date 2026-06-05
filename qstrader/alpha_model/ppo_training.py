@@ -1,4 +1,5 @@
 from qstrader.alpha_model.env_setup import QSTraderExecutionEnv
+from qstrader import settings as qstrader_settings
 
 import os
 from stable_baselines3 import PPO
@@ -9,11 +10,14 @@ from stable_baselines3.common.monitor import Monitor
 
 def _make_env(config):
     def _init():
+        from qstrader import settings as qstrader_settings
+        qstrader_settings.set_print_events(False)
         return Monitor(QSTraderExecutionEnv(config))
     return _init
 
 
 def main():
+    qstrader_settings.set_print_events(False)
     training_config = {
         'state_dim': 15,                                          # 5 assets x 3 features
         'action_dim': 5,
@@ -23,9 +27,12 @@ def main():
         'assets': ['EQ:SPY', 'EQ:AGG', 'EQ:GLD', 'EQ:IEI', 'EQ:TLT']
     }
     # Eval env uses a fixed 2019 window (not random sampling) for stable comparisons.
+    # starting_day is set to 2018-11-01 to provide the 25-day burn-in period that
+    # env_setup requires before any valid episode start can be sampled; the episode
+    # itself will always land in early January 2019 (the only valid start range).
     eval_config = {
         **training_config,
-        'starting_day': '2019-01-01',
+        'starting_day': '2018-11-01',
         'ending_day': '2019-12-31'
     }
 
