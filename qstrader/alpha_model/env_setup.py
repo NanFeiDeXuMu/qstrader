@@ -52,9 +52,11 @@ class QSTraderExecutionEnv(gym.Env):
         where many distinct raw actions mapped to the same normalised weight vector.
         """
         super().__init__()
-        # Unconstrained logit action space — softmax applied inside proxyAlphaModel
+        # Logit action space — softmax applied inside proxyAlphaModel.
+        # SB3 ≥2.3 requires finite bounds; ±1e4 is functionally unbounded for
+        # softmax (differences >~10 already saturate to near-one-hot weights).
         self.action_space = spaces.Box(
-            low=-np.inf, high=np.inf,
+            low=-1e4, high=1e4,
             shape=(training_config['action_dim'],),
             dtype=np.float32
         )

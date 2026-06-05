@@ -30,8 +30,8 @@
 | Test (out-of-sample) | 2020–2023 |
 | RL algorithm | PPO (Stable-Baselines3) + MlpPolicy |
 | Backtest framework | QSTrader (daily OHLCV CSV data) |
-| Action space | `Box(-∞, +∞, shape=(5,))` — raw logits; softmax inside env |
-| Observation space | `Box(-∞, +∞, shape=(15,))` — 5 assets × 3 rolling features |
+| Action space | `Box(-1e4, +1e4, shape=(5,))` — raw logits; softmax inside env |
+| Observation space | `Box(-1e4, +1e4, shape=(15,))` — 5 assets × 3 rolling features |
 | Reward | Daily log return `log(V_t / V_{t-1})` |
 
 The codebase adapts [QSTrader](https://github.com/mhallsmoore/qstrader) as the simulation engine and adds a Gymnasium-compatible wrapper so Stable-Baselines3 can drive portfolio rebalancing directly.
@@ -113,12 +113,12 @@ Each `reset()` samples a **random 252-trading-day sub-window** from 2010–2018 
 ### 3.3 Action space & weight mapping
 
 ```
-PPO outputs logits a ∈ R^5  (unbounded)
+PPO outputs logits a ∈ [-1e4, 1e4]^5  (finite but functionally unbounded)
          ↓  softmax  (inside proxyAlphaModel.__call__ and PPOModel._action_to_weights)
 weights w_i = exp(a_i) / Σ exp(a_j)   ∈ (0,1),  Σ w_i = 1
 ```
 
-Using an unbounded logit space gives the policy a unique, bijective gradient signal for every weight vector. The old `[0,1]` box caused gradient degeneracy: many distinct raw actions normalised to the same weight vector.
+Using a large but finite logit space gives the policy a unique, bijective gradient signal for every weight vector. The old `[0,1]` box caused gradient degeneracy: many distinct raw actions normalised to the same weight vector. Bounds of `±1e4` are used instead of `±∞` because Stable-Baselines3 ≥2.3 requires finite action-space bounds; softmax differences beyond ~10 already saturate to near-one-hot weights, so the practical difference is negligible.
 
 ### 3.4 Observation (state) vector — 15 dimensions
 
@@ -360,7 +360,7 @@ The table below documents all fixes applied to the original skeleton code, for t
 |------|-----|-----|
 | `alpha_model/env_setup.py` | Every episode replayed identical 2010–2018 window → memorisation, no generalisation | `reset()` now samples a random 252-day sub-window; `CSVDailyBarDataSource` created once in `__init__` to avoid LRU memory leak |
 | `alpha_model/env_setup.py` | Reward was absolute dollar P&L → scale instability across regimes | Changed to `log(V_t / V_{t-1})` |
-| `alpha_model/env_setup.py` | Action space `Box(0,1)` caused gradient degeneracy (many raw actions → same normalised weights) | Changed to `Box(-∞,∞)`; softmax mapping in `proxyAlphaModel.__call__` |
+| `alpha_model/env_setup.py` | Action space `Box(0,1)` caused gradient degeneracy (many raw actions → same normalised weights); later `Box(-inf,inf)` rejected by SB3 ≥2.3 (`isfinite` assertion) | Changed to `Box(-1e4, 1e4)`; softmax mapping in `proxyAlphaModel.__call__` |
 | `alpha_model/ppo_training.py` | `ent_coef=0.0` → zero exploration, converged to equal-weight after first pass | Set `ent_coef=0.01` |
 | `alpha_model/ppo_training.py` | No obs/reward normalisation → Critic unstable with log-return rewards | Added `VecNormalize(norm_obs=True, norm_reward=True, clip_obs=10.0)` |
 | `alpha_model/ppo_model.py` | Inference used `clip+normalise` for weights; training used no explicit normalisation → train/infer mismatch | Both now use identical softmax; `ppo_vecnormalize.pkl` applied at inference |
