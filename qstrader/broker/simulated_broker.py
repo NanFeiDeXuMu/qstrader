@@ -573,14 +573,11 @@ class SimulatedBroker(Broker):
         price = self.slippage_model(
             order.asset, order.quantity, current_mid_price, self
         )
-        price_change = self.market_impact_model(order.quantity)
 
         consideration = round(price * order.quantity)
         total_commission = self.fee_model.calc_total_cost(
             order.asset, order.quantity, consideration, self
         )
-
-        self.data_handler.set_last_price(order.asset, price_change)
 
         # Check that sufficient cash exists to carry out the
         # order, else scale it down

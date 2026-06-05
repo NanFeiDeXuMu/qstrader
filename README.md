@@ -1,112 +1,371 @@
-# QSTrader
+# PPO Portfolio Optimisation with QSTrader
 
-| Development   | Details       |
-| ------------- | ------------- |
-| Test Status   | [![Build Status](https://img.shields.io/travis/mhallsmoore/qstrader?label=TravisCI&style=flat-square)](https://travis-ci.org/mhallsmoore/qstrader) [![Coverage Status](https://img.shields.io/coveralls/github/mhallsmoore/qstrader?style=flat-square&label=Coverage)](https://coveralls.io/github/mhallsmoore/qstrader?branch=master) |
-| Version Info  | [![PyPI](https://img.shields.io/pypi/v/qstrader?style=flat-square&label=PyPI&color=blue)](https://pypi.org/project/qstrader) [![PyPI Downloads](https://img.shields.io/pypi/dm/qstrader?style=flat-square&label=PyPI%20Downloads)](https://pypi.org/project/qstrader) |
-| Compatibility | [![Python Version](https://img.shields.io/pypi/pyversions/qstrader?style=flat-square&label=Python%20Versions)](https://pypi.org/project/qstrader) |
-| License       | ![GitHub](https://img.shields.io/github/license/mhallsmoore/qstrader?style=flat-square&label=License) |
+> **CS377 Team 12** — Nurtilek Duishobaev · Tattep Lakmuang · Liu Yixuan
+>
+> **Research question:** Does deep reinforcement learning (PPO) learn to allocate a multi-asset portfolio better than naïve baselines (buy-and-hold, equal-weight) in a clean, fully controlled setup?
 
-QSTrader is a free Python-based open-source modular schedule-driven backtesting framework for long-short equities and ETF based systematic trading strategies.
+---
 
-QSTrader can be best described as a loosely-coupled collection of modules for carrying out end-to-end backtests with realistic trading mechanics.
+## Table of Contents
 
-The default modules provide useful functionality for certain types of systematic trading strategies and can be utilised without modification. However the intent of QSTrader is for the users to extend, inherit or fully replace each module in order to provide custom functionality for their own use case.
+1. [Project Overview](#1-project-overview)
+2. [Repository Layout](#2-repository-layout)
+3. [Architecture & Data Flow](#3-architecture--data-flow)
+4. [Quick Start](#4-quick-start)
+5. [Training Pipeline Details](#5-training-pipeline-details)
+6. [Backtest Pipeline Details](#6-backtest-pipeline-details)
+7. [Key Design Decisions (read before changing anything)](#7-key-design-decisions-read-before-changing-anything)
+8. [Known Limitations & Next Steps](#8-known-limitations--next-steps)
+9. [Bug-Fix History](#9-bug-fix-history)
 
-The software is currently under active development and is provided under a permissive "MIT" license.
+---
 
-# Previous Version and Advanced Algorithmic Trading
+## 1. Project Overview
 
-Please note that the previous version of QSTrader, which is utilised through the **Advanced Algorithmic Trading** ebook, can be found along with the appropriate installation instructions [here](https://github.com/mhallsmoore/qstrader/tree/advanced-algorithmic-trading).
+| Dimension | Value |
+|-----------|-------|
+| Asset universe | SPY, AGG, GLD, IEI, TLT (5 ETFs) |
+| Train | 2010–2018 (random 252-day sub-windows per episode) |
+| Validation | 2019 (fixed window, used by EvalCallback) |
+| Test (out-of-sample) | 2020–2023 |
+| RL algorithm | PPO (Stable-Baselines3) + MlpPolicy |
+| Backtest framework | QSTrader (daily OHLCV CSV data) |
+| Action space | `Box(-∞, +∞, shape=(5,))` — raw logits; softmax inside env |
+| Observation space | `Box(-∞, +∞, shape=(15,))` — 5 assets × 3 rolling features |
+| Reward | Daily log return `log(V_t / V_{t-1})` |
 
-It has recently been updated to support Python 3.9, 3.10, 3.11 and 3.12 with up to date package dependencies.
+The codebase adapts [QSTrader](https://github.com/mhallsmoore/qstrader) as the simulation engine and adds a Gymnasium-compatible wrapper so Stable-Baselines3 can drive portfolio rebalancing directly.
 
-# Installation
+---
 
-Installation requires a Python3 environment. The simplest approach is to download a self-contained scientific Python distribution such as the [Anaconda Individual Edition](https://www.anaconda.com/products/individual#Downloads). You can then install QSTrader into an isolated [virtual environment](https://docs.python.org/3/tutorial/venv.html#virtual-environments-and-packages) using pip as shown below.
-
-Any issues with installation should be reported to the development team as issues [here](https://github.com/mhallsmoore/qstrader/issues).
-
-## conda
-
-[conda](https://docs.conda.io/projects/conda/en/latest/) is a command-line tool that comes with the Anaconda distribution. It allows you to manage virtual environments as well as packages _using the same tool_.
-
-The following command will create a brand new environment called `backtest`.
-
-```
-conda create -n backtest python
-```
-This will use the conda default Python version. At time of writing this was Python 3.12. QSTrader currently supports Python 3.9, 3.10, 3.11 and 3.12. Optionally you can specify a python version by substituting python==3.9 into the command as follows:
-
-```
-conda create -n backtest python==3.9
-```
-
-In order to start using QSTrader, you need to activate this new environment and install QSTrader using pip.
+## 2. Repository Layout
 
 ```
-conda activate backtest
-pip3 install qstrader
+qstrader/
+├── main.py                              # CLI entry point (--mode train/backtest/both)
+├── ppo_final_model.zip                  # Saved PPO weights (output of training)
+├── ppo_vecnormalize.pkl                 # VecNormalize obs statistics (must ship with model)
+├── ppo_checkpoints/                     # Per-10k-step checkpoints + best/ subdir
+├── backtest_comparison.png              # Output chart (3-strategy equity curves + metrics)
+├── examples/                            # CSV price data (SPY.csv, AGG.csv, …)
+│
+└── qstrader/
+    ├── alpha_model/
+    │   ├── env_setup.py                 # Gymnasium env wrapping QSTrader (★ core RL file)
+    │   ├── ppo_training.py              # PPO training entry point
+    │   ├── ppo_model.py                 # PPO inference adapter (AlphaModel interface)
+    │   ├── feature_handler.py           # Market data → 15-dim state vector
+    │   ├── alpha_model.py               # AlphaModel abstract base class
+    │   └── fixed_signals.py             # Fixed-weight baseline alpha model
+    │
+    ├── trading/backtest.py              # BacktestTradingSession (simulation orchestrator)
+    ├── system/qts.py                    # QuantTradingSystem (PCM + Execution)
+    ├── system/rebalance/                # Rebalance schedules (daily/weekly/EOM/buy_and_hold)
+    ├── portcon/
+    │   ├── pcm.py                       # PortfolioConstructionModel
+    │   ├── optimiser/fixed_weight.py    # Pass-through optimiser (weights unchanged)
+    │   └── order_sizer/dollar_weighted.py  # Long-only share-quantity calculator
+    ├── broker/simulated_broker.py       # Simulated broker (positions, cash, order fill)
+    ├── data/
+    │   ├── backtest_data_handler.py     # Price access layer (bid/ask/historical closes)
+    │   └── daily_bar_csv.py             # CSV data source (OHLCV → bid/ask DataFrame)
+    └── simulation/daily_bday.py         # Daily market event engine (open/close)
 ```
 
-## pip
+---
 
-Alternatively, you can use [venv](https://docs.python.org/3/tutorial/venv.html#creating-virtual-environments) to handle the environment creation and [pip](https://docs.python.org/3/tutorial/venv.html#managing-packages-with-pip) to handle the package installation.
+## 3. Architecture & Data Flow
 
-```
-python -m venv backtest
-source backtest/bin/activate  # Need to activate environment before installing package
-pip3 install qstrader
-```
-
-# Full Documentation
-
-Comprehensive documentation and beginner tutorials for QSTrader can be found on QuantStart.com at [https://www.quantstart.com/qstrader/](https://www.quantstart.com/qstrader/).
-
-# Quickstart
-
-The QSTrader repository provides some simple example strategies at [/examples](https://github.com/mhallsmoore/qstrader/tree/master/examples).
-
-Within this quickstart section a classic 60/40 equities/bonds portfolio will be backtested with monthly rebalancing on the last day of the calendar month.
-
-To get started download the [sixty_forty.py](https://github.com/mhallsmoore/qstrader/blob/master/examples/sixty_forty.py) file and place into the directory of your choice.
-
-The 60/40 script makes use of OHLC 'daily bar' data from Yahoo Finance. In particular it requires the [SPY](https://finance.yahoo.com/quote/SPY/history?p=SPY) and [AGG](https://finance.yahoo.com/quote/AGG/history?p=AGG) ETFs data. Download the full history for each and save as CSV files in same directory as ``sixty_forty.py``.
-
-Assuming that an appropriate Python environment exists and QSTrader has been installed (see **Installation** above), make sure to activate the virtual environment, navigate to the directory with ``sixty_forty.py`` and type:
+### 3.1 How the RL loop connects to QSTrader
 
 ```
-python sixty_forty.py
+PPO.learn()
+  └─ QSTraderExecutionEnv.step(action)          # env_setup.py
+       │
+       ├─ proxyAlphaModel.current_actions = action   # store raw logits
+       │
+       └─ _advance_to_market_open()
+            ├─ market_close event
+            │    └─ BacktestTradingSession.qts(dt)
+            │         └─ PortfolioConstructionModel(dt)
+            │              ├─ proxyAlphaModel(dt)     # softmax(logits) → {asset: weight}
+            │              ├─ FixedWeightOptimiser     # pass-through
+            │              └─ DollarWeightedOrderSizer → rebalance Orders
+            │                   └─ SimulatedBroker.submit_order()
+            │
+            └─ market_open event
+                 └─ FeatureHandler(dt) → obs (15,)
 ```
 
-You will then see some console output as the backtest simulation engine runs through each day and carries out the rebalancing logic once per month. Once the backtest is complete a tearsheet will appear:
+**Key invariant:** The PPO policy never touches QSTrader internals directly. It only writes logits into `proxyAlphaModel.current_actions`; QSTrader reads them via the normal `AlphaModel.__call__` interface.
 
-![Image of 60/40 Backtest](https://quantstartmedia.s3.amazonaws.com/images/qstrader_sixty_forty_backtest.png)
+### 3.2 Episode structure
 
-You can examine the commented ``sixty_forty.py`` file to see the current QSTrader backtesting API.
+Each `reset()` samples a **random 252-trading-day sub-window** from 2010–2018 (start date drawn uniformly from all valid business days that leave room for a full 252-day window and have at least 25 days of prior price history for the feature lookback).
 
-If you have any questions about the installation or example usage then please feel free to email [support@quantstart.com](mailto:support@quantstart.com) or raise an issue [here](https://github.com/mhallsmoore/qstrader/issues).
+```
+[  25 burn-in days excluded from valid start range  ]
+[ ── 252-day episode ── ]
+  day 1 … day 252
+  each day = 1 RL step = 1 (market_open obs → action → market_close rebalance → reward)
+```
 
-# Current Features
+### 3.3 Action space & weight mapping
 
-* **Backtesting Engine** - QSTrader employs a schedule-based portfolio construction approach to systematic trading. Signal generation is decoupled from portfolio construction, risk management, execution and simulated brokerage accounting in a modular, object-oriented fashion.
+```
+PPO outputs logits a ∈ R^5  (unbounded)
+         ↓  softmax  (inside proxyAlphaModel.__call__ and PPOModel._action_to_weights)
+weights w_i = exp(a_i) / Σ exp(a_j)   ∈ (0,1),  Σ w_i = 1
+```
 
-* **Performance Statistics** - QSTrader provides typical 'tearsheet' performance assessment of strategies. It also supports statistics export via JSON to allow external software to consume metrics from backtests.
+Using an unbounded logit space gives the policy a unique, bijective gradient signal for every weight vector. The old `[0,1]` box caused gradient degeneracy: many distinct raw actions normalised to the same weight vector.
 
-* **Free Open-Source Software** - QSTrader has been released under a permissive open-source MIT License. This allows full usage in both research and commercial applications, without restriction, but with no warranty of any kind whatsoever (see **License** below). QSTrader is completely free and costs nothing to download or use.
+### 3.4 Observation (state) vector — 15 dimensions
 
-* **Software Development** - QSTrader is written in the Python programming language for straightforward cross-platform support. QSTrader contains a suite of unit and integration tests for the majority of its modules. Tests are continually added for new features.
+For each of the 5 assets, `FeatureHandler` computes over a 20-day rolling window:
 
-# License Terms
+| Index | Feature | Description |
+|-------|---------|-------------|
+| 3i | `latest_log_return` | `log(p_t) - log(p_{t-1})` |
+| 3i+1 | `mean_log_return` | Mean of 20-day log returns (momentum proxy) |
+| 3i+2 | `std_log_return` | Std of 20-day log returns (volatility proxy) |
 
-Copyright (c) 2015-2024 QuantStart.com, QuarkGluon Ltd
+If fewer than 2 prices are available (e.g. at the start of a CSV), the fallback uses the last known `mean` and `std` for that asset (accumulated lazily once a full window has been seen), with `latest_log_return = 0`. This avoids the all-zero observation problem that corrupted warm-up steps in the previous implementation.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+### 3.5 Reward
 
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+```python
+reward = log(portfolio_value_t / portfolio_value_{t-1})
+```
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+Log return is scale-invariant and additive over time. The previous implementation used absolute dollar P&L, which caused Critic instability because the magnitude varied by orders of magnitude across market regimes.
 
-# Trading Disclaimer
+---
 
-Trading equities on margin carries a high level of risk, and may not be suitable for all investors. Past performance is not indicative of future results. The high degree of leverage can work against you as well as for you. Before deciding to invest in equities you should carefully consider your investment objectives, level of experience, and risk appetite. The possibility exists that you could sustain a loss of some or all of your initial investment and therefore you should not invest money that you cannot afford to lose. You should be aware of all the risks associated with equities trading, and seek advice from an independent financial advisor if you have any doubts.
+## 4. Quick Start
+
+### 4.1 Dependencies
+
+```bash
+pip install stable-baselines3 gymnasium pandas numpy matplotlib pytz tabulate python-docx
+```
+
+### 4.2 Data
+
+Place `SPY.csv, AGG.csv, GLD.csv, IEI.csv, TLT.csv` in `examples/`. Format (Yahoo Finance daily):
+
+```
+Date,Open,High,Low,Close,Volume
+2010-01-04,112.37,113.39,111.51,113.33,118944600
+```
+
+### 4.3 Run
+
+```bash
+# Train PPO on 2010–2018, save model + VecNormalize stats
+python main.py --mode train
+
+# Backtest trained model on 2020–2023 vs two baselines, save backtest_comparison.png
+python main.py --mode backtest
+
+# Train then immediately backtest
+python main.py --mode both
+
+# Custom data directory
+QSTRADER_CSV_DATA_DIR=/path/to/csvs python main.py --mode both
+```
+
+### 4.4 Outputs
+
+| File | Description |
+|------|-------------|
+| `ppo_final_model.zip` | Trained PPO policy weights |
+| `ppo_vecnormalize.pkl` | Running obs normalisation stats — **must be kept alongside the model** |
+| `ppo_checkpoints/` | Per-10k-step checkpoints; `best/` subdirectory holds the best validation checkpoint |
+| `backtest_comparison.png` | 3-strategy normalised equity curves + performance metrics table |
+
+---
+
+## 5. Training Pipeline Details
+
+**Entry point:** `qstrader/alpha_model/ppo_training.py`
+
+### Hyperparameters
+
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| `state_dim` | 15 | 5 assets × 3 features |
+| `action_dim` | 5 | One logit per asset |
+| `learning_rate` | 3e-4 | Adam |
+| `n_steps` | 2048 | Rollout buffer length before each update |
+| `batch_size` | 64 | Mini-batch size for gradient updates |
+| `n_epochs` | 10 | PPO update epochs per rollout |
+| `gamma` | 0.99 | Discount factor |
+| `gae_lambda` | 0.95 | GAE lambda |
+| `clip_range` | 0.2 | PPO clipping ε |
+| `ent_coef` | **0.01** | Entropy bonus — keeps exploration alive, prevents premature convergence to equal-weight |
+| `total_timesteps` | 500,000 | ≈ 1,984 random 252-day episodes |
+| `VecNormalize` | `norm_obs=True, norm_reward=True, clip_obs=10.0` | Running normalisation of obs and rewards |
+
+### Checkpointing & evaluation
+
+- Checkpoint saved every 10,000 steps → `ppo_checkpoints/ppo_model_<step>_steps.zip`
+- `EvalCallback` evaluates on fixed 2019 window every 50,000 steps; best model saved to `ppo_checkpoints/best/`
+- `ppo_vecnormalize.pkl` saved at end of training — required for consistent inference
+
+---
+
+## 6. Backtest Pipeline Details
+
+**Entry point:** `main.py → run_backtest()`
+
+Three strategies run over the **2020–2023 out-of-sample period**:
+
+| Strategy | Alpha Model | Rebalance |
+|----------|------------|-----------|
+| PPO Agent | `PPOModel` (trained network, softmax action) | Daily |
+| Buy & Hold SPY | `FixedSignalsAlphaModel({'EQ:SPY': 1.0})` | Initial buy only |
+| Equal-Weight | `FixedSignalsAlphaModel({each asset: 0.2})` | End of month |
+
+Each strategy gets its own independent `BacktestDataHandler` instance to avoid `cumulative_offsets` state leaking between runs.
+
+**Metrics computed:** Annualised return, annualised volatility, Sharpe ratio, max drawdown, Calmar ratio, total return.
+
+---
+
+## 7. Key Design Decisions (read before changing anything)
+
+### 7.1 `CSVDailyBarDataSource` is created once in `QSTraderExecutionEnv.__init__`
+
+The data source is shared across all `reset()` calls. Creating a new instance per reset caused LRU-cache memory growth (the `@functools.lru_cache` on `get_bid`/`get_ask` accumulates ~tens of MB per episode). Only the thin `BacktestDataHandler` wrapper is re-created each reset.
+
+### 7.2 `BacktestDataHandler.get_asset_latest_mid_price` does NOT add `cumulative_offsets`
+
+The `cumulative_offsets` mechanism exists for slippage simulation. Mid-price is used only for position marking (unrealised P&L). Adding offsets there created a runaway positive-feedback loop (`total_equity → ∞`). Bid and ask prices do add offsets (intentionally, for execution price simulation).
+
+### 7.3 `VecNormalize` statistics must travel with the model
+
+`ppo_final_model.zip` and `ppo_vecnormalize.pkl` are a matched pair. If you retrain, both files are overwritten together. At inference time, `PPOModel.__init__` loads `ppo_vecnormalize.pkl` and applies `normalize_obs()` before calling `model.predict()`. Deploying the model without the `.pkl` will silently degrade performance because the policy was trained on normalised observations.
+
+### 7.4 Random episode sampling requires `_valid_starts`
+
+`_valid_starts` is computed once in `__init__` and excludes the first `BURN_IN_DAYS=25` business days from the training range (so `FeatureHandler` always has ≥20 days of history) and any start date that would end the episode beyond `ending_day`. Changing `EPISODE_LENGTH_DAYS` or `BURN_IN_DAYS` constants at the top of `env_setup.py` affects how many valid start dates exist.
+
+---
+
+## 8. Known Limitations & Next Steps
+
+The following are the most important directions for future work, roughly in order of expected impact.
+
+### 8.1 Transaction cost penalty in the reward (highest priority — Proposal extension)
+
+The Proposal explicitly names this as the primary extension. Currently `fee_model=ZeroFeeModel()` is passed to every `BacktestTradingSession`. The simulation infrastructure already supports `PercentFeeModel`.
+
+**To add transaction cost to PPO training:**
+
+1. In `BacktestTradingSession.__init__`, replace `ZeroFeeModel()` with `PercentFeeModel(commission=0.001)` (10 bps).
+2. Alternatively, compute the cost explicitly inside `QSTraderExecutionEnv.step()`:
+
+```python
+# Approximate turnover-based cost penalty
+prev_weights = np.array(list(self.alpha_model(dt).values()))  # before rebalance
+# ... advance simulation ...
+turnover = np.sum(np.abs(new_weights - prev_weights))
+cost_penalty = 0.001 * turnover   # 10 bps × turnover fraction
+reward = log_return - cost_penalty
+```
+
+3. Re-train with the penalty and compare against the zero-cost run. The expected result is that the agent learns to trade less frequently (lower turnover), which validates that the reward signal is being used correctly.
+
+### 8.2 Multiple random seeds (3 seeds minimum per Proposal)
+
+The Proposal specifies training with **3 random seeds** and reporting mean ± std across seeds. The current codebase trains a single model. To run multi-seed:
+
+```python
+# In ppo_training.py, wrap main() with a seed loop:
+for seed in [42, 123, 7]:
+    model = PPO(..., seed=seed)
+    model.learn(...)
+    model.save(f'ppo_model_seed{seed}.zip')
+    train_env.save(f'ppo_vecnormalize_seed{seed}.pkl')
+```
+
+Report the mean Sharpe / cumulative return across seeds, not just the single best run, to avoid cherry-picking.
+
+### 8.3 Expand state features
+
+The current 15-dim state captures only short-term momentum and volatility. Consider adding:
+
+| Feature | Rationale |
+|---------|-----------|
+| Current portfolio weights `w_t` | Allows agent to reason about turnover cost |
+| 60-day momentum (`mean_log_return`, `lookback=60`) | Medium-term trend signal |
+| Pairwise rolling correlation (upper triangle, 10 values) | Regime-dependent diversification signal |
+| Drawdown from peak per asset | Risk-off signal |
+
+If you add features, update `state_dim` in `training_config` in both `ppo_training.py` and `main.py`, and re-train from scratch (the saved model is tied to the old `state_dim=15`).
+
+### 8.4 Increase training timesteps
+
+500,000 steps ÷ 252 steps/episode ≈ 1,984 episodes. Financial RL typically requires 5–10× more episodes to converge, especially after adding transaction costs. Consider `total_timesteps=2_000_000` if compute allows.
+
+### 8.5 Expand asset universe to Dow Jones 30
+
+The Proposal mentions using Dow Jones 30 stocks. The current code uses 5 ETFs because they are liquid and diversified across asset classes. Switching to 30 stocks requires:
+
+1. Download 30 CSVs into `examples/` (or a new directory).
+2. Update `SYMBOLS` and `ASSETS` lists in `main.py`.
+3. Update `state_dim` (30 × 3 = 90) and `action_dim` (30) in `training_config`.
+4. The `FixedWeightOptimiser` and `DollarWeightedOrderSizer` require no changes — they are already asset-count agnostic.
+
+### 8.6 Tune `ent_coef` and `learning_rate`
+
+The current `ent_coef=0.01` was chosen to prevent collapse to equal-weight; it may be too high (too much randomness) or too low (still converging prematurely) for the transaction-cost setting. A simple grid search: `ent_coef ∈ {0.005, 0.01, 0.02}` × `learning_rate ∈ {1e-4, 3e-4}`.
+
+### 8.7 Current benchmark gap context
+
+In the 2020–2023 test period, Buy & Hold SPY outperforms the PPO agent. This is **partially expected** for structural reasons (see below), but the technical fixes in this codebase should significantly narrow the gap compared to the unfixed version:
+
+| Root cause | Status |
+|-----------|--------|
+| Identical episode repeated 220× (no generalisation) | Fixed — random sub-windows |
+| Dollar P&L reward (Critic instability) | Fixed — log return reward |
+| `ent_coef=0.0` (zero exploration) | Fixed — `ent_coef=0.01` |
+| Action space degeneracy | Fixed — softmax logit space |
+| No obs normalisation | Fixed — `VecNormalize` |
+| Train/test domain shift (QE era vs rate-hike era) | **Structural** — add macro features (§8.3) |
+| Daily rebalancing friction vs zero-cost buy-and-hold | **Structural** — add transaction cost (§8.1) |
+
+---
+
+## 9. Bug-Fix History
+
+The table below documents all fixes applied to the original skeleton code, for traceability.
+
+### 9.1 Original skeleton bugs (from `CS377_Project_Plan.md`)
+
+| File | Bug | Fix |
+|------|-----|-----|
+| `portcon/order_sizer/dollar_weighted.py` | Division by zero when price is NaN/0/negative; `int(inf)` overflow | Added price validity check; `np.isfinite` guard before `int()` |
+| `portcon/order_sizer/long_short.py` | Only checked NaN, missed `price=0` | Extded check to `NaN or <= 0.0` |
+| `data/backtest_data_handler.py` | `get_asset_latest_bid_ask_price` double-added `cumulative_offsets` | Removed redundant second addition |
+| `data/backtest_data_handler.py` | `get_asset_latest_mid_price` added `cumulative_offsets`, causing `total_equity → ∞` | Removed offset from mid-price path |
+| `alpha_model/env_setup.py` | Rebalance errors during training crashed the episode | Wrapped `qts()` in `try/except (ValueError, OverflowError)` |
+| `alpha_model/ppo_model.py` | Missing `__call__`; wrong `feature_handler` call signature | Implemented `__call__(dt)`; fixed to `feature_handler(dt)` |
+| `data/backtest_data_handler.py` | `get_assets_historical_closes` received unsupported `adjusted` kwarg | Removed the argument |
+
+### 9.2 RL training quality bugs (fixed in current version)
+
+| File | Bug | Fix |
+|------|-----|-----|
+| `alpha_model/env_setup.py` | Every episode replayed identical 2010–2018 window → memorisation, no generalisation | `reset()` now samples a random 252-day sub-window; `CSVDailyBarDataSource` created once in `__init__` to avoid LRU memory leak |
+| `alpha_model/env_setup.py` | Reward was absolute dollar P&L → scale instability across regimes | Changed to `log(V_t / V_{t-1})` |
+| `alpha_model/env_setup.py` | Action space `Box(0,1)` caused gradient degeneracy (many raw actions → same normalised weights) | Changed to `Box(-∞,∞)`; softmax mapping in `proxyAlphaModel.__call__` |
+| `alpha_model/ppo_training.py` | `ent_coef=0.0` → zero exploration, converged to equal-weight after first pass | Set `ent_coef=0.01` |
+| `alpha_model/ppo_training.py` | No obs/reward normalisation → Critic unstable with log-return rewards | Added `VecNormalize(norm_obs=True, norm_reward=True, clip_obs=10.0)` |
+| `alpha_model/ppo_model.py` | Inference used `clip+normalise` for weights; training used no explicit normalisation → train/infer mismatch | Both now use identical softmax; `ppo_vecnormalize.pkl` applied at inference |
+| `alpha_model/feature_handler.py` | Episode warm-up (first ~20 steps) emitted all-zero observation vectors | Fallback now uses lazily-accumulated historical mean/std per asset instead of zeros |
+
+---
+
+*QSTrader original framework: © 2015–2024 QuantStart.com, QuarkGluon Ltd. MIT License.*

@@ -3,7 +3,7 @@ from qstrader.alpha_model.env_setup import QSTraderExecutionEnv
 import os
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from stable_baselines3.common.monitor import Monitor
 
 
@@ -16,6 +16,7 @@ def main():
         'symbols': ['SPY', 'AGG', 'GLD', 'IEI', 'TLT'],
         'assets': ['EQ:SPY', 'EQ:AGG', 'EQ:GLD', 'EQ:IEI', 'EQ:TLT']
     }
+    # Eval env uses a fixed 2019 window (not random sampling) for stable comparisons.
     eval_config = {
         **training_config,
         'starting_day': '2019-01-01',
@@ -23,7 +24,16 @@ def main():
     }
 
     train_env = DummyVecEnv([lambda: Monitor(QSTraderExecutionEnv(training_config))])
-    eval_env = Monitor(QSTraderExecutionEnv(eval_config))
+    # VecNormalize: normalise observations (running mean/std) and rewards (running std).
+    # Critical for log-return rewards which are small (~1e-3) and for observation
+    # features that span different scales across assets and market regimes.
+    train_env = VecNormalize(train_env, norm_obs=True, norm_reward=True, clip_obs=10.0)
+
+    # Eval env shares the same obs normalisation statistics as train_env (norm_reward
+    # disabled for eval so EvalCallback sees true episode returns for comparison).
+    eval_env = DummyVecEnv([lambda: Monitor(QSTraderExecutionEnv(eval_config))])
+    eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=False, clip_obs=10.0,
+                            training=False)
 
     model = PPO(
         policy='MlpPolicy',
@@ -35,18 +45,27 @@ def main():
         gamma=0.99,
         gae_lambda=0.95,
         clip_range=0.2,
-        ent_coef=0.0,
+        ent_coef=0.01,   # non-zero entropy bonus encourages exploration and prevents
+                         # premature convergence to a uniform-weight local optimum
         verbose=1
     )
 
     os.makedirs('./ppo_checkpoints/', exist_ok=True)
     callbacks = [
         CheckpointCallback(save_freq=10000, save_path='./ppo_checkpoints/', name_prefix='ppo_model'),
-        EvalCallback(eval_env, eval_freq=50000, best_model_save_path='./ppo_checkpoints/best/')
+        EvalCallback(
+            eval_env,
+            eval_freq=50000,
+            best_model_save_path='./ppo_checkpoints/best/',
+            # Sync obs normalisation stats from train_env into eval_env before each eval.
+            callback_after_eval=None,
+        )
     ]
 
     model.learn(total_timesteps=500_000, callback=callbacks, progress_bar=True)
     model.save('ppo_final_model.zip')
+    # Save VecNormalize statistics alongside the model so inference can reuse them.
+    train_env.save('ppo_vecnormalize.pkl')
 
 
 if __name__ == '__main__':

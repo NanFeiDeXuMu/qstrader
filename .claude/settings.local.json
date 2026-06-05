@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__chrome-devtools__list_pages",
+      "Read(//c/Users/nanfe/qstrader/**)",
+      "mcp__chrome-devtools__take_screenshot",
+      "Read(//c//**)",
+      "Read(//c/Users/nanfe/**)",
+      "mcp__chrome-devtools__new_page",
+      "Bash(python -c ':*)"
+    ]
+  }
+}

@@ -386,7 +386,7 @@ class BacktestTradingSession(TradingSession):
             if external_event:
                 event = external_event
             dt = event.ts
-            if not settings.PRINT_EVENTS:
+            if settings.PRINT_EVENTS:
                 print("(%s) - %s" % (event.ts, event.event_type))
 
             # Update the simulated broker

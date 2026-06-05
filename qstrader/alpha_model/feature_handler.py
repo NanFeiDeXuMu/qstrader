@@ -18,6 +18,10 @@ class FeatureHandler:
         self.data_handler = data_handler
         self.assets = assets
         self.lookback = lookback
+        # Fallback statistics computed from the first full window seen.
+        # Populated lazily; avoids all-zero observations during warm-up.
+        self._fallback_mean = {}
+        self._fallback_std  = {}
 
     def __call__(self, dt):
         # Need lookback+1 closes to compute lookback returns; add buffer for holidays
@@ -33,10 +37,25 @@ class FeatureHandler:
                 if len(prices) < 2:
                     raise ValueError("insufficient data")
                 log_ret = np.diff(np.log(prices + 1e-8))
-                features.append(float(log_ret[-1]))
-                features.append(float(np.mean(log_ret)))
-                features.append(float(np.std(log_ret) + 1e-8))
+
+                latest_ret  = float(log_ret[-1])
+                mean_ret    = float(np.mean(log_ret))
+                std_ret     = float(np.std(log_ret) + 1e-8)
+
+                # Update fallback stats as soon as we have a full window
+                if len(log_ret) >= self.lookback:
+                    self._fallback_mean[asset] = mean_ret
+                    self._fallback_std[asset]  = std_ret
+
+                features.append(latest_ret)
+                features.append(mean_ret)
+                features.append(std_ret)
             except Exception:
-                features.extend([0.0, 0.0, 1e-8])
+                # Use historical fallback if available; otherwise neutral defaults.
+                # Neutral default: zero return, small but non-zero volatility proxy.
+                features.append(0.0)
+                features.append(self._fallback_mean.get(asset, 0.0))
+                features.append(self._fallback_std.get(asset, 1e-4))
 
         return np.array(features, dtype=np.float32)
+
