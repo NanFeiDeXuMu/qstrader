@@ -2,7 +2,7 @@ import os
 import pandas as pd
 import yfinance as yf
 
-SYMBOLS = ['SPY', 'AGG', 'GLD', 'IEI', 'TLT']
+SYMBOLS = ['SPY', 'AGG', 'GLD', 'SHY', 'TLT']
 START = '2003-01-01'
 END   = '2024-01-01'
 

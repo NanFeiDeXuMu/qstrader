@@ -61,7 +61,7 @@ class QSTraderExecutionEnv(gym.Env):
             dtype=np.float32
         )
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf,
+            low=-1e4, high=1e4,
             shape=(training_config['state_dim'],),
             dtype=np.float32
         )
@@ -117,7 +117,11 @@ class QSTraderExecutionEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        rng = np.random.default_rng(seed)
+        # Use the seed only when explicitly set (e.g. reproducibility tests).
+        # SubprocVecEnv passes a fixed per-worker seed on every auto-reset, which
+        # would cause each worker to replay the same episode window repeatedly.
+        # Falling back to true randomness when seed is None preserves diversity.
+        rng = np.random.default_rng(seed if seed is not None else None)
 
         start_dt, end_dt = self._sample_episode_window(rng)
 
@@ -212,8 +216,8 @@ if __name__ == "__main__":
         'action_dim': 5,
         'starting_day': '2010-01-01',
         'ending_day': '2018-12-31',
-        'symbols': ['SPY', 'AGG', 'GLD', 'IEI', 'TLT'],
-        'assets': ['EQ:SPY', 'EQ:AGG', 'EQ:GLD', 'EQ:IEI', 'EQ:TLT']
+        'symbols': ['SPY', 'AGG', 'GLD', 'SHY', 'TLT'],
+        'assets': ['EQ:SPY', 'EQ:AGG', 'EQ:GLD', 'EQ:SHY', 'EQ:TLT']
     })
     obs, info = env.reset()
     done = False

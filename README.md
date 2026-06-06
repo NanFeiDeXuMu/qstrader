@@ -24,7 +24,7 @@
 
 | Dimension | Value |
 |-----------|-------|
-| Asset universe | SPY, AGG, GLD, IEI, TLT (5 ETFs) |
+| Asset universe | SPY, AGG, GLD, SHY, TLT (5 ETFs) |
 | Train | 2010–2018 (random 252-day sub-windows per episode) |
 | Validation | 2019 (fixed window, used by EvalCallback) |
 | Test (out-of-sample) | 2020–2023 |
@@ -152,7 +152,7 @@ pip install stable-baselines3 gymnasium pandas numpy matplotlib pytz tabulate py
 
 ### 4.2 Data
 
-Place `SPY.csv, AGG.csv, GLD.csv, IEI.csv, TLT.csv` in `examples/`. Format (Yahoo Finance daily):
+Place `SPY.csv, AGG.csv, GLD.csv, SHY.csv, TLT.csv` in `examples/`. Format (Yahoo Finance daily):
 
 ```
 Date,Open,High,Low,Close,Volume

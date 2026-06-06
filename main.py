@@ -15,6 +15,7 @@ Usage examples:
 
 import argparse
 import os
+import datetime
 
 import numpy as np
 import pandas as pd
@@ -37,14 +38,15 @@ from qstrader.trading.backtest import BacktestTradingSession
 from qstrader.alpha_model.ppo_model import PPOModel
 from qstrader.alpha_model.feature_handler import FeatureHandler
 from qstrader.alpha_model.ppo_training import main as train_ppo
+from qstrader import settings as qstrader_settings
 
 
 # ─────────────────────────────────────────────────────────────────
 # Global configuration
 # ─────────────────────────────────────────────────────────────────
 
-SYMBOLS = ['SPY', 'AGG', 'GLD', 'IEI', 'TLT']
-ASSETS  = ['EQ:SPY', 'EQ:AGG', 'EQ:GLD', 'EQ:IEI', 'EQ:TLT']
+SYMBOLS = ['SPY', 'AGG', 'GLD', 'SHY', 'TLT']
+ASSETS  = ['EQ:SPY', 'EQ:AGG', 'EQ:GLD', 'EQ:SHY', 'EQ:TLT']
 
 # Out-of-sample test window (train 2010-2018, validation 2019, test 2020-2023)
 TEST_START = pd.Timestamp('2020-01-01 14:30:00', tz=pytz.UTC)
@@ -234,7 +236,7 @@ def plot_comparison(
     spy_eq:   pd.DataFrame,
     ew_eq:    pd.DataFrame,
     metrics:  list,
-    save_path: str = 'backtest_comparison.png'
+    save_path: str = None
 ):
     """
     Two-panel comparison chart:
@@ -324,6 +326,7 @@ def plot_comparison(
 
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     print(f"[chart] Saved to {save_path}")
+    plt.close()
     try:
         plt.show()
     except Exception:
@@ -337,6 +340,7 @@ def plot_comparison(
 
 def run_backtest():
     """Run all three strategies, print a metrics table, and save the comparison chart."""
+    qstrader_settings.set_print_events(False)
     universe = StaticUniverse(ASSETS)
 
     # Each strategy gets its own data_handler to prevent cumulative_offsets state
@@ -360,7 +364,11 @@ def run_backtest():
     print_metrics_table(metrics)
 
     # ── Multi-strategy comparison chart ─────────────────────────
-    plot_comparison(ppo_equity, spy_equity, ew_equity, metrics)
+    charts_dir = os.path.join(os.path.dirname(__file__), 'backtest_charts')
+    os.makedirs(charts_dir, exist_ok=True)
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    chart_path = os.path.join(charts_dir, f'backtest_comparison_{timestamp}.png')
+    plot_comparison(ppo_equity, spy_equity, ew_equity, metrics, save_path=chart_path)
 
     # ── QSTrader native tearsheet (PPO vs SPY) ──────────────────
     tearsheet = TearsheetStatistics(

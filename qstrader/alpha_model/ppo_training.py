@@ -3,9 +3,29 @@ from qstrader import settings as qstrader_settings
 
 import os
 from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
+from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback, BaseCallback
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNormalize
 from stable_baselines3.common.monitor import Monitor
+
+
+class SyncVecNormalize(BaseCallback):
+    """Copy running obs stats from train_env into eval_env before each evaluation.
+
+    EvalCallback creates a separate VecNormalize wrapping eval_env with
+    training=False, so its mean/var never update. Without syncing, the eval
+    env normalises observations with stale (initial) statistics while the
+    policy was trained on continuously-updated statistics — the mismatch makes
+    checkpoint selection unreliable.
+    """
+    def __init__(self, train_env: VecNormalize, eval_env: VecNormalize):
+        super().__init__()
+        self.train_env = train_env
+        self.eval_env = eval_env
+
+    def _on_step(self) -> bool:
+        self.eval_env.obs_rms = self.train_env.obs_rms
+        self.eval_env.ret_rms = self.train_env.ret_rms
+        return True
 
 
 def _make_env(config):
@@ -23,8 +43,8 @@ def main():
         'action_dim': 5,
         'starting_day': '2010-01-01',
         'ending_day': '2018-12-31',
-        'symbols': ['SPY', 'AGG', 'GLD', 'IEI', 'TLT'],
-        'assets': ['EQ:SPY', 'EQ:AGG', 'EQ:GLD', 'EQ:IEI', 'EQ:TLT']
+        'symbols': ['SPY', 'AGG', 'GLD', 'SHY', 'TLT'],
+        'assets': ['EQ:SPY', 'EQ:AGG', 'EQ:GLD', 'EQ:SHY', 'EQ:TLT']
     }
     # Eval env uses a fixed 2019 window (not random sampling) for stable comparisons.
     # starting_day is set to 2018-11-01 to provide the 25-day burn-in period that
@@ -65,14 +85,14 @@ def main():
     )
 
     os.makedirs('./ppo_checkpoints/', exist_ok=True)
+    sync_cb = SyncVecNormalize(train_env, eval_env)
     callbacks = [
         CheckpointCallback(save_freq=10000, save_path='./ppo_checkpoints/', name_prefix='ppo_model'),
         EvalCallback(
             eval_env,
             eval_freq=50000,
             best_model_save_path='./ppo_checkpoints/best/',
-            # Sync obs normalisation stats from train_env into eval_env before each eval.
-            callback_after_eval=None,
+            callback_before_eval=sync_cb,
         )
     ]
 

@@ -1,30 +1,22 @@
 from qstrader.alpha_model.alpha_model import AlphaModel
 from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import VecNormalize
 import numpy as np
+import pickle
 import os
 
 class PPOModel(AlphaModel):
     def __init__(self, ppo_model_path, assets, feature_handler,
                  vecnormalize_path=None):
-        '''
-        ppo_model_path:    path to saved PPO zip
-        vecnormalize_path: optional path to ppo_vecnormalize.pkl; when provided,
-                           observations are normalised with the same running stats
-                           used during training, which is required when VecNormalize
-                           was used in ppo_training.py.
-        feature_handler:   FeatureHandler instance
-        '''
         self.model = PPO.load(ppo_model_path)
         self.assets = assets
         self.feature_handler = feature_handler
         self._vec_norm = None
 
         if vecnormalize_path and os.path.exists(vecnormalize_path):
-            # Load saved normalisation stats (mean/var) for obs-only normalisation.
-            # VecNormalize.load requires a dummy env argument; pass None and set
-            # training=False so it is used purely as a stateless scaler.
-            self._vec_norm = VecNormalize.load(vecnormalize_path, venv=None)
+            # SB3 ≥2.3 requires a real venv in VecNormalize.load; load the pickle
+            # directly to extract only the running stats (mean/var) we need.
+            with open(vecnormalize_path, 'rb') as f:
+                self._vec_norm = pickle.load(f)
             self._vec_norm.training = False
             self._vec_norm.norm_reward = False
 
