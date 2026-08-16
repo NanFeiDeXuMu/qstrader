@@ -1,6 +1,5 @@
 # PPO Portfolio Optimisation with QSTrader
 
-> **CS377 Team 12** — Nurtilek Duishobaev · Tattep Lakmuang · Liu Yixuan
 >
 > **Research question:** Does deep reinforcement learning (PPO) learn to allocate a multi-asset portfolio better than naïve baselines (buy-and-hold, equal-weight) in a clean, fully controlled setup?
 
